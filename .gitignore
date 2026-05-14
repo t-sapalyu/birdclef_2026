@@ -221,4 +221,7 @@ __marimo__/
 *.npy
 *.ogg
 *.parquet
+data/
+tests/
+artifacts/
 .ipynb_checkpoints/
