@@ -222,3 +222,6 @@ __marimo__/
 *.ogg
 *.parquet
 .ipynb_checkpoints/
+
+# Custom
+dataset
