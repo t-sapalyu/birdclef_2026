@@ -224,4 +224,7 @@ __marimo__/
 .ipynb_checkpoints/
 
 # Custom
-dataset
+dataset/
+data/
+tests/
+artifacts/
