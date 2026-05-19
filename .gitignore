@@ -225,3 +225,6 @@ data/
 tests/
 artifacts/
 .ipynb_checkpoints/
+
+# Custom
+dataset
