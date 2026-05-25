@@ -13,3 +13,8 @@ from .dataset import (
     FocalDataset, SoundscapeChunkDataset, 
     parse_label_list, build_multihot,
 )
+from .augmentations import (
+    apply_mixup, SpectrogramAugmenter, BackgroundMixer,
+    RandomFilterAugmenter, WaveformAugmenter,
+    AugmentationPipeline, get_augmentation_config,
+)

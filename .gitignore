@@ -225,3 +225,9 @@ data/
 tests/
 artifacts/
 .ipynb_checkpoints/
+
+
+
+data/
+venv/
+docs/
