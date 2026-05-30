@@ -7,7 +7,7 @@ import librosa
 from torch.utils.data import Dataset
 
 from .audio import (
-    load_audio, normalize_waveform, fix_length, audio_to_melspec,
+    load_audio, normalize_waveform, fix_length, audio_to_melspec_torch,
 )
 from .constants import SR, N_SAMPLES, NUM_CLASSES
 
@@ -77,41 +77,46 @@ class FocalDataset(Dataset):
         return len(self.df)
 
     def __getitem__(self, idx):
-        row = self.df.iloc[idx]
-        filepath = os.path.join(self.audio_dir, row['filename'])
+        for _ in range(10):
+            row = self.df.iloc[idx]
+            filepath = os.path.join(self.audio_dir, row['filename'])
 
-        # --- load ---
-        y, sr = load_audio(filepath, max_duration=self.max_duration)
-        if y is None:
-            # Corrupt / missing file: skip it, return another random sample.
-            return self.__getitem__(np.random.randint(len(self)))
+            # --- load ---
+            y, _ = load_audio(filepath, max_duration=self.max_duration)
+            if y is None:
+                idx = np.random.randint(len(self))
+                continue
 
-        # --- preprocess ---
-        y = normalize_waveform(y)
+            # --- preprocess ---
+            y = normalize_waveform(y)
 
-        # waveform-domain augmentation hook (Task 3)
-        if self.mode == 'train' and self.waveform_transform is not None:
-            y = self.waveform_transform(y)
+            # waveform-domain augmentation hook (Task 3)
+            if self.mode == 'train' and self.waveform_transform is not None:
+                y = self.waveform_transform(y)
 
-        # exact length: random crop for training, center crop for val
-        crop_mode = 'random' if self.mode == 'train' else 'center'
-        y = fix_length(y, N_SAMPLES, crop_mode=crop_mode)
+            # exact length: random crop for training, center crop for val
+            crop_mode = 'random' if self.mode == 'train' else 'center'
+            y = fix_length(y, N_SAMPLES, crop_mode=crop_mode)
 
-        # --- mel spectrogram (computed on the fly) ---
-        spec = audio_to_melspec(y)                 # (N_MELS, time)
-        spec = torch.from_numpy(spec).unsqueeze(0)  # (1, N_MELS, time)
+            # --- mel spectrogram (computed on the fly) ---
+            spec = audio_to_melspec_torch(y)              # (1, N_MELS, time)
 
-        # spectrogram-domain augmentation hook (Task 3, e.g. SpecAugment)
-        if self.mode == 'train' and self.spec_transform is not None:
-            spec = self.spec_transform(spec)
+            # spectrogram-domain augmentation hook (Task 3, e.g. SpecAugment)
+            if self.mode == 'train' and self.spec_transform is not None:
+                spec = self.spec_transform(spec)
 
-        # --- label ---
-        codes = [row['primary_label']]
-        if self.use_secondary and 'secondary_labels' in row:
-            codes += parse_label_list(row.get('secondary_labels'))
-        label = build_multihot(codes, self.label2idx)
+            # --- label ---
+            codes = [row['primary_label']]
+            if self.use_secondary and 'secondary_labels' in row:
+                codes += parse_label_list(row.get('secondary_labels'))
+            label = build_multihot(codes, self.label2idx)
 
-        return spec, label
+            return spec, label
+
+        raise RuntimeError(
+            f"FocalDataset: could not load a valid sample after 10 attempts "
+            f"(last tried: {filepath})"
+        )
 
 
 class SoundscapeChunkDataset(Dataset):
@@ -147,46 +152,53 @@ class SoundscapeChunkDataset(Dataset):
         return len(self.df)
 
     def __getitem__(self, idx):
-        row = self.df.iloc[idx]
-        filepath = os.path.join(self.audio_dir, row['filename'])
+        for _ in range(10):
+            row = self.df.iloc[idx]
+            filepath = os.path.join(self.audio_dir, row['filename'])
 
-        # --- load the EXACT 5 s chunk window ---
-        try:
-            y, sr = librosa.load(
-                filepath,
-                sr=SR,
-                offset=float(row['start_sec']),
-                duration=5.0,
-                mono=True,
-            )
-            y = np.asarray(y, dtype=np.float32)
-        except Exception as e:
-            print(f"SoundscapeChunkDataset: failed to load "
-                  f"{filepath}@{row['start_sec']}s: {e}")
-            return self.__getitem__(np.random.randint(len(self)))
+            # --- load the EXACT 5 s chunk window ---
+            try:
+                y, _ = librosa.load(
+                    filepath,
+                    sr=SR,
+                    offset=float(row['start_sec']),
+                    duration=5.0,
+                    mono=True,
+                )
+                y = np.asarray(y, dtype=np.float32)
+            except Exception as e:
+                print(f"SoundscapeChunkDataset: failed to load "
+                      f"{filepath}@{row['start_sec']}s: {e}")
+                idx = np.random.randint(len(self))
+                continue
 
-        if y.size == 0:
-            return self.__getitem__(np.random.randint(len(self)))
+            if y.size == 0:
+                idx = np.random.randint(len(self))
+                continue
 
-        # --- preprocess ---
-        y = normalize_waveform(y)
+            # --- preprocess ---
+            y = normalize_waveform(y)
 
-        if self.mode == 'train' and self.waveform_transform is not None:
-            y = self.waveform_transform(y)
+            if self.mode == 'train' and self.waveform_transform is not None:
+                y = self.waveform_transform(y)
 
-        # Pad/crop to exact length. crop_mode='start' because the chunk
-        # window is already fixed - we just normalize any rounding drift.
-        y = fix_length(y, N_SAMPLES, crop_mode='start')
+            # Pad/crop to exact length. crop_mode='start' because the chunk
+            # window is already fixed - we just normalize any rounding drift.
+            y = fix_length(y, N_SAMPLES, crop_mode='start')
 
-        # --- mel spectrogram (on the fly) ---
-        spec = audio_to_melspec(y)
-        spec = torch.from_numpy(spec).unsqueeze(0)
+            # --- mel spectrogram (on the fly) ---
+            spec = audio_to_melspec_torch(y)              # (1, N_MELS, time)
 
-        if self.mode == 'train' and self.spec_transform is not None:
-            spec = self.spec_transform(spec)
+            if self.mode == 'train' and self.spec_transform is not None:
+                spec = self.spec_transform(spec)
 
-        # --- label: soundscape primary_label is a ';'-separated list ---
-        codes = parse_label_list(row['primary_label'])
-        label = build_multihot(codes, self.label2idx)
+            # --- label: soundscape primary_label is a ';'-separated list ---
+            codes = parse_label_list(row['primary_label'])
+            label = build_multihot(codes, self.label2idx)
 
-        return spec, label
+            return spec, label
+
+        raise RuntimeError(
+            f"SoundscapeChunkDataset: could not load a valid sample after "
+            f"10 attempts (last tried: {filepath}@{row['start_sec']}s)"
+        )

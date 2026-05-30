@@ -4,6 +4,7 @@ from .constants import (
 )
 from .audio import (
     load_audio, normalize_waveform, fix_length, audio_to_melspec,
+    audio_to_melspec_torch,
 )
 from .folds import (
     create_audio_folds, check_audio_folds,
