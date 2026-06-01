@@ -119,6 +119,75 @@ class FocalDataset(Dataset):
         )
 
 
+class UpsampledSpeciesDataset(Dataset):
+    """Dataset for pre-extracted 5-second clips under train_upsampled_species/.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Rows from species_segment_index.csv already filtered to the desired
+        fold/split. Must have 'assigned_species' and 'dest_path' columns.
+    seg_dir : str
+        Path to the train_upsampled_species directory (SEG_DIR). dest_path
+        values in the CSV are project-root-relative
+        ('data/train_upsampled_species/<species>/<file>'); the two leading
+        components are stripped so files resolve as <seg_dir>/<species>/<file>.
+    label2idx : dict
+        Maps species code -> integer class index.
+    mode : {'train', 'val'}
+        Governs whether augmentation hooks fire.
+    waveform_transform, spec_transform : callable or None
+        Same augmentation hooks as FocalDataset.
+    """
+
+    def __init__(self, df, seg_dir, label2idx,
+                 mode='train', waveform_transform=None, spec_transform=None):
+        self.df = df[df['assigned_species'].isin(label2idx)].reset_index(drop=True)
+        self.seg_dir = seg_dir
+        self.label2idx = label2idx
+        self.mode = mode
+        self.waveform_transform = waveform_transform
+        self.spec_transform = spec_transform
+
+    def __len__(self):
+        return len(self.df)
+
+    def __getitem__(self, idx):
+        for _ in range(10):
+            row = self.df.iloc[idx]
+            # dest_path: 'data/train_upsampled_species/<species>/<file>.ogg'
+            # Strip the two leading components to resolve relative to seg_dir.
+            parts = row['dest_path'].split('/')
+            filepath = os.path.join(self.seg_dir, *parts[2:])
+
+            y, _ = load_audio(filepath, max_duration=5.0)
+            if y is None:
+                idx = np.random.randint(len(self))
+                continue
+
+            y = normalize_waveform(y)
+
+            if self.mode == 'train' and self.waveform_transform is not None:
+                y = self.waveform_transform(y)
+
+            # Normalize any sub-sample rounding drift from the extraction step.
+            y = fix_length(y, N_SAMPLES, crop_mode='start')
+
+            spec = audio_to_melspec_torch(y)
+
+            if self.mode == 'train' and self.spec_transform is not None:
+                spec = self.spec_transform(spec)
+
+            label = build_multihot([row['assigned_species']], self.label2idx)
+
+            return spec, label
+
+        raise RuntimeError(
+            f"UpsampledSpeciesDataset: could not load a valid sample after "
+            f"10 attempts (last tried: {filepath})"
+        )
+
+
 class SoundscapeChunkDataset(Dataset):
     """Dataset for labeled soundscape chunks.
 
