@@ -4,12 +4,13 @@ from .constants import (
 )
 from .audio import (
     load_audio, normalize_waveform, fix_length, audio_to_melspec,
+    audio_to_melspec_torch,
 )
 from .folds import (
     create_audio_folds, check_audio_folds,
     create_soundscape_folds, check_soundscape_folds,
 )
 from .dataset import (
-    FocalDataset, SoundscapeChunkDataset, 
+    FocalDataset, SoundscapeChunkDataset, UpsampledSpeciesDataset,
     parse_label_list, build_multihot,
 )

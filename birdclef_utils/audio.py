@@ -1,9 +1,22 @@
 import numpy as np
 import librosa
+import torch
+import torchaudio.transforms as T
 
 from .constants import (
     SR, N_SAMPLES, N_FFT, HOP_LENGTH, N_MELS, F_MIN, F_MAX, TOP_DB,
 )
+
+_mel_transform = T.MelSpectrogram(
+    sample_rate=SR,
+    n_fft=N_FFT,
+    hop_length=HOP_LENGTH,
+    n_mels=N_MELS,
+    f_min=F_MIN,
+    f_max=F_MAX,
+    power=2.0,
+)
+_amplitude_to_db = T.AmplitudeToDB(stype="power", top_db=TOP_DB)
 
 
 def load_audio(filepath, max_duration=30.0):
@@ -117,6 +130,48 @@ def fix_length(y, target_len=N_SAMPLES, crop_mode='start'):
         )
 
     return y[start:start + target_len]
+
+
+def audio_to_melspec_torch(waveform):
+    """Convert a 1-D waveform to a normalized log-mel spectrogram tensor.
+
+    Uses torchaudio.transforms.MelSpectrogram. Equivalent to audio_to_melspec
+    but returns a float32 torch.Tensor of shape (1, N_MELS, time_frames) so
+    the dataset can use it directly without a numpy round-trip.
+
+    Parameters
+    ----------
+    waveform : np.ndarray
+        1-D mono float32 waveform. Must not be None.
+
+    Returns
+    -------
+    torch.Tensor
+        Shape (1, N_MELS, time_frames), dtype float32, values in [0, 1].
+    """
+    if waveform is None:
+        raise ValueError(
+            "audio_to_melspec_torch received None - check the return value of "
+            "load_audio before calling this."
+        )
+
+    waveform = np.asarray(waveform, dtype=np.float32)
+    if waveform.ndim != 1:
+        raise ValueError(
+            f"audio_to_melspec_torch expects a 1-D waveform, got shape "
+            f"{waveform.shape}."
+        )
+
+    wav_t = torch.from_numpy(waveform).unsqueeze(0)
+    mel = _mel_transform(wav_t)
+    log_mel = _amplitude_to_db(mel)
+
+    # Shift so the loudest bin is 0 dB, matching librosa's ref=np.max.
+    log_mel = log_mel - log_mel.max()
+
+    log_mel = (log_mel + TOP_DB) / TOP_DB             # normalize to [0, 1]
+    log_mel = torch.nan_to_num(log_mel, nan=0.0, posinf=1.0, neginf=0.0)
+    return log_mel.clamp(0.0, 1.0)                    # (1, N_MELS, time_frames)
 
 
 def audio_to_melspec(waveform):
