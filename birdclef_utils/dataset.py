@@ -271,3 +271,81 @@ class SoundscapeChunkDataset(Dataset):
             f"SoundscapeChunkDataset: could not load a valid sample after "
             f"10 attempts (last tried: {filepath}@{row['start_sec']}s)"
         )
+
+
+class PseudoLabeledDataset(Dataset):
+    """Dataset for pseudo-labeled soundscape chunks.
+
+    Reads a CSV where columns beyond 'row_id' are species codes carrying
+    soft-label probabilities predicted by a teacher model. The audio file
+    for each row is row_id + '.ogg' resolved under audio_dir.
+
+    Label construction mirrors the shape/ordering of label2idx but uses
+    the soft probability values from the CSV instead of hard 0/1 encoding.
+    Species columns absent from label2idx are silently ignored; label2idx
+    keys absent from the CSV are left at 0.0.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Rows from a pseudo-label CSV (e.g.
+        PL_v2s_baseline_fold2_ZERO_OUT_0.2_THRESHOLD_0.6.csv).
+        Must have a 'row_id' column; all other columns are treated as
+        species codes with float soft-label values.
+    audio_dir : str
+        Directory containing the .ogg chunk audio files.
+    label2idx : dict
+        Maps species code -> integer class index.
+    mode : {'train', 'val'}
+        Governs whether augmentation hooks fire.
+    waveform_transform, spec_transform : callable or None
+        Same augmentation hooks as FocalDataset.
+    """
+
+    def __init__(self, df, audio_dir, label2idx,
+                 mode='train', waveform_transform=None, spec_transform=None):
+        self.df = df.reset_index(drop=True)
+        self.audio_dir = audio_dir
+        self.label2idx = label2idx
+        self.mode = mode
+        self.waveform_transform = waveform_transform
+        self.spec_transform = spec_transform
+        # Precompute which CSV columns map to a valid class index.
+        valid = [(c, label2idx[c]) for c in df.columns if c != 'row_id' and c in label2idx]
+        self._species_cols, self._species_indices = zip(*valid) if valid else ([], [])
+
+    def __len__(self):
+        return len(self.df)
+
+    def __getitem__(self, idx):
+        for _ in range(10):
+            row = self.df.iloc[idx]
+            filepath = os.path.join(self.audio_dir, row['row_id'] + '.ogg')
+
+            y, _ = load_audio(filepath, max_duration=5.0)
+            if y is None:
+                idx = np.random.randint(len(self))
+                continue
+
+            y = normalize_waveform(y)
+
+            if self.mode == 'train' and self.waveform_transform is not None:
+                y = self.waveform_transform(y)
+
+            y = fix_length(y, N_SAMPLES, crop_mode='start')
+
+            spec = audio_to_melspec_torch(y)
+
+            if self.mode == 'train' and self.spec_transform is not None:
+                spec = self.spec_transform(spec)
+
+            label = torch.zeros(NUM_CLASSES, dtype=torch.float32)
+            for col, lidx in zip(self._species_cols, self._species_indices):
+                label[lidx] = float(row[col])
+
+            return spec, label
+
+        raise RuntimeError(
+            f"PseudoLabeledDataset: could not load a valid sample after "
+            f"10 attempts (last tried: {filepath})"
+        )
