@@ -142,7 +142,7 @@ class UpsampledSpeciesDataset(Dataset):
 
     def __init__(self, df, seg_dir, label2idx,
                  mode='train', waveform_transform=None, spec_transform=None):
-        self.df = df[df['assigned_species'].isin(label2idx)].reset_index(drop=True)
+        self.df = df.reset_index(drop=True)
         self.seg_dir = seg_dir
         self.label2idx = label2idx
         self.mode = mode
@@ -178,7 +178,8 @@ class UpsampledSpeciesDataset(Dataset):
             if self.mode == 'train' and self.spec_transform is not None:
                 spec = self.spec_transform(spec)
 
-            label = build_multihot([row['assigned_species']], self.label2idx)
+            codes = parse_label_list(row['original_primary_label'])
+            label = build_multihot(codes, self.label2idx)
 
             return spec, label
 
