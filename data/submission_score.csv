@@ -1,0 +1,10 @@
+model,public_score,private_score
+effnetb0_fold0_last,0.64258,0.66531
+effnetb0_fold1_last,0.63730,0.66295
+effnetb0_fold2_last,0.63515,0.64998
+effnetv2s_fold0_last,0.63017,0.64859
+effnetv2s_fold1_last,0.62256,0.64547
+effnetv2s_fold2_last,0.62210,0.65447
+effnetb3_fold0_last,0.62382,0.64548
+effnetb3_fold1_last,0.65975,0.65160
+effnetb3_fold2_last,0.63285,0.64297

@@ -221,7 +221,12 @@ __marimo__/
 *.npy
 *.ogg
 *.parquet
-data/
+data/sample_audio/
+data/train_audio/
+data/train_audio_upsampled/
+data/train_soundscapes/
+data/train_soundscapes_upsampled/
+data/train_upsampled_species/
 tests/
 artifacts/
 .ipynb_checkpoints/
