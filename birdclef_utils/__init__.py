@@ -11,6 +11,6 @@ from .folds import (
     create_soundscape_folds, check_soundscape_folds,
 )
 from .dataset import (
-    FocalDataset, SoundscapeChunkDataset, UpsampledSpeciesDataset,
+    FocalDataset, SoundscapeChunkDataset, UpsampledSpeciesDataset, PseudoLabeledDataset,
     parse_label_list, build_multihot,
 )
